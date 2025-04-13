@@ -1,6 +1,46 @@
 const path = require("path");
 const db = require("../config/db");
 
+// exports.upload_note = (req, res) => {
+// const title = req.body.title;
+// const tags = req.body.tags;
+// const user_id = req.user.id;
+// const file = req.file;
+// const required_tags = tags.split(",");
+// if (!file || !title || !tags) {
+//   res.json("Missing items");
+// }
+
+// try {
+//   const insert = db.prepare(
+//     `INSERT INTO notes (user_id,title,filename) VALUES(?,?,?)`
+//   );
+
+//   const result = insert.run(user_id, title, file.filename);
+
+//   const note_id = result.lastInsertRowid();
+//   const tag_id_query = db.prepare(`SELECT * FROM tags WHERE tag_name = ?`);
+
+//   let tag_ids = [];
+//   for (const tag of required_tags) {
+//     const row = tag_id_query.get(tag.toLowerCase());
+//     if (row) {
+//       tag_ids.push(row.id);
+//     }
+//   }
+
+//   const link_tags = db.prepare(
+//     `INSERT INTO note_tags (note_id,tag_id) VALUES (?,?)`
+//   );
+//   for (const tag_id of tag_ids) {
+//     link_tags.run(note_id, tag_id);
+//   }
+//   res.status(201).json({ message: "Note uploaded successfully" });
+// } catch (err) {
+//   res.json(err);
+// }
+// };
+
 exports.upload_note = (req, res) => {
   const title = req.body.title;
   const tags = req.body.tags;
@@ -8,39 +48,48 @@ exports.upload_note = (req, res) => {
   const file = req.file;
 
   if (!file || !title || !tags) {
-    res.json("Missing items");
+    return res.status(400).json({ message: "Missing file, title, or tags" });
   }
 
+  const required_tags = tags.split(",").map((tag) => tag.trim().toLowerCase());
+
   try {
-    const insert = db.prepare(
-      `INSERT INTO notes (user_id,title,filename) VALUES(?,?,?)`
+    const insert_note = db.prepare(
+      `INSERT INTO notes (user_id, title, filename) VALUES (?, ?, ?)`
     );
+    const result = insert_note.run(user_id, title, file.filename);
 
-    const result = insert.run(user_id, title, file.filename);
+    const note_id = result.lastInsertRowid;
 
-    const note_id = result.lastInsertRowid();
-    const tag_id_query = db.prepare(`SELECT * FROM tags WHERE tag_name = ?`);
+    const insert_tag = db.prepare(`INSERT INTO tags (name) VALUES (?)`);
+    const tag_id_query = db.prepare(`SELECT * FROM tags WHERE name = ?`);
 
     let tag_ids = [];
-    for (const tag of tags) {
-      const row = tag_id_query.get(tag.toLowerCase());
-      if (row) {
-        tag_ids.push(row.id);
+    for (let tag of required_tags) {
+      let row = tag_id_query.get(tag);
+      if (!row) {
+        insert_tag.run(tag);
+        row = tag_id_query.get(tag);
       }
+      tag_ids.push(row.id);
     }
 
     const link_tags = db.prepare(
-      `INSERT INTO note_tags (note_id,tag_id) VALUES (?,?)`
+      `INSERT INTO note_tags (note_id, tag_id) VALUES (?, ?)`
     );
+
     for (const tag_id of tag_ids) {
       link_tags.run(note_id, tag_id);
     }
+
     res.status(201).json({ message: "Note uploaded successfully" });
   } catch (err) {
-    res.json(err);
+    console.error(err);
+    res
+      .status(500)
+      .json({ message: "Error uploading note", error: err.message });
   }
 };
-
 exports.get_all_notes = (req, res) => {
   const get_all_query = db.prepare(
     `SELECT notes.id,
